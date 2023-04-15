@@ -1,0 +1,63 @@
+# ## Project Access Tokens
+# URL: <https://gitlab.com/kalilinux/tools/packaging/-/settings/access_tokens>
+# Settings -> Access Tokens
+# - Token name: `GITLAB_JOB_ACCESS_TOKEN`
+# - Expiration date: `N/A`
+# - Select a role: `Developer`
+# - Select scopes: `read_repository` & `write_repository`
+#
+# ## CI/CD Settings - Variables
+# URL: <https://gitlab.com/kalilinux/tools/packaging/-/settings/ci_cd>
+# Settings -> CI/CD -> Variables -> Add variable
+# - Key: `GITLAB_JOB_ACCESS_TOKEN`
+# - Value: _Value from above_
+# - Type: `Variable` _(Default)_
+# - Environment scope: `All` _(Default)_
+# - Protect variable: `Enable` _(Default)_
+# - Mask variable: `Enable`
+#
+# ## CI/CD Settings - Schedules
+# URL: https://gitlab.com/kalilinux/tools/packaging/-/pipeline_schedules
+# CI/CD -> Schedules -> New Schedule
+# - Description: `Daily`
+# - Interval Pattern: `Custom` -> `0 0 * * *`
+# - Cron Timezone: `UTC`
+# - Target branch or tag: `master`
+# - Activated: `Enable`
+
+image: 'debian:11-slim'
+
+stages:
+  - update
+
+variables:
+  # Create a shallow git copy
+  GIT_DEPTH: 1
+  # Name that appears in the commit log
+  AUTHOR_NAME: "GitLab Runner"
+  # Email that appears in the commit log
+  AUTHOR_EMAIL: "gitlab-runner@kali.org"
+  # Commit message for git log
+  COMMIT_MESSAGE: "${CI_PROJECT_NAME} update from GitLab CI"
+
+update-mrconfig:
+  stage: update
+  before_script:
+    - apt-get update
+    - apt-get -y --no-install-recommends install git
+    - git remote rm origin
+    - git remote add origin "https://${GITLAB_USER_LOGIN}:${GITLAB_JOB_ACCESS_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+    - git config --global user.name "${AUTHOR_NAME}"
+    - git config --global user.email "${AUTHOR_EMAIL}"
+  script:
+    - apt-get -y --no-install-recommends install devscripts libgitlab-api-v4-perl
+    - ./bin/update-mrconfig
+  after_script:
+    - git add .
+    - git status
+    - git commit -m "${COMMIT_MESSAGE}" || echo "Skipping commit"
+    - git push -o ci.skip origin HEAD:${CI_COMMIT_REF_NAME} #"${CI_DEFAULT_BRANCH}"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: '$CI_COMMIT_REF_NAME == "$CI_DEFAULT_BRANCH"'
+      when: "manual"
